@@ -6,7 +6,11 @@ const {
   userFromSession,
   safeJsonParse,
 } = require("../utils/http");
-const { normalizePath, isWithin } = require("../utils/files");
+const {
+  normalizePath,
+  isWithin,
+  exportsPath,
+} = require("../utils/files");
 const { Workspace } = require("../models/workspace");
 const { Document } = require("../models/documents");
 const { DocumentVectors } = require("../models/vectors");
@@ -1154,6 +1158,70 @@ function workspaceEndpoints(app) {
       } catch (error) {
         console.error("Error checking if agent command is available:", error);
         response.status(500).json({ showAgentCommand: true });
+      }
+    }
+  );
+
+  /**
+   * Export a workspace snapshot (settings + full chat history) to a JSON file
+   * under storage/exports so it can be backed up or migrated to another
+   * instance. Returns the filename to fetch via the download route below.
+   */
+  app.post(
+    "/workspace/:slug/export",
+    [validatedRequest, flexUserRoleValid([ROLES.all])],
+    async (request, response) => {
+      try {
+        const { slug } = request.params;
+        const { filename = null } = reqBody(request);
+        const user = await userFromSession(request, response);
+        const workspace = await Workspace.get({ slug });
+        if (!workspace) {
+          response.sendStatus(400).end();
+          return;
+        }
+
+        const history = await WorkspaceChats.forWorkspace(workspace.id);
+        const snapshot = {
+          exportedAt: new Date().toISOString(),
+          workspace,
+          chats: convertToChatHistory(history),
+        };
+
+        const exportName = filename || `${workspace.slug}-${Date.now()}.json`;
+        const exportFile = path.join(exportsPath, exportName);
+        if (!fs.existsSync(exportsPath))
+          fs.mkdirSync(exportsPath, { recursive: true });
+        fs.writeFileSync(exportFile, JSON.stringify(snapshot, null, 2));
+
+        await EventLogs.logEvent(
+          "workspace_exported",
+          { workspaceName: workspace.name, exportName },
+          user?.id
+        );
+        response.status(200).json({ success: true, filename: exportName });
+      } catch (e) {
+        console.error(e.message, e);
+        response.status(500).json({ success: false, error: e.message });
+      }
+    }
+  );
+
+  app.get(
+    "/workspace/:slug/export/:filename",
+    [validatedRequest],
+    async (request, response) => {
+      try {
+        const { filename } = request.params;
+        const exportFile = path.join(exportsPath, filename);
+        if (!fs.existsSync(exportFile)) {
+          response.sendStatus(404).end();
+          return;
+        }
+        response.download(exportFile, path.basename(exportFile));
+      } catch (e) {
+        console.error(e.message, e);
+        response.sendStatus(500).end();
       }
     }
   );
