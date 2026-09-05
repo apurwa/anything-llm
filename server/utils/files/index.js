@@ -7,6 +7,11 @@ const documentsPath =
   process.env.NODE_ENV === "development"
     ? path.resolve(__dirname, `../../storage/documents`)
     : path.resolve(process.env.STORAGE_DIR, `documents`);
+/** Where workspace export snapshots are written. See workspaces.js export routes. */
+const exportsPath =
+  process.env.NODE_ENV === "development"
+    ? path.resolve(__dirname, `../../storage/exports`)
+    : path.resolve(process.env.STORAGE_DIR, `exports`);
 const directUploadsPath =
   process.env.NODE_ENV === "development"
     ? path.resolve(__dirname, `../../storage/direct-uploads`)
@@ -511,6 +516,7 @@ module.exports = {
   isWithin,
   documentsPath,
   directUploadsPath,
+  exportsPath,
   hasVectorCachedFiles,
   purgeEntireVectorCache,
   getDocumentsByFolder,
