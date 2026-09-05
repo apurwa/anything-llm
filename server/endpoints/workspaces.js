@@ -43,6 +43,20 @@ const { getModelTag } = require("./utils");
 const { searchWorkspaceAndThreads } = require("../utils/helpers/search");
 const { workspaceParsedFilesEndpoints } = require("./workspacesParsedFiles");
 
+function resolveExportFile(filename) {
+  if (
+    typeof filename !== "string" ||
+    filename.includes("\0") ||
+    !/^[^/\\]+\.json$/.test(filename) ||
+    path.basename(filename) !== filename
+  )
+    return null;
+
+  const resolvedExportsPath = path.resolve(exportsPath);
+  const exportFile = path.resolve(resolvedExportsPath, filename);
+  return isWithin(resolvedExportsPath, exportFile) ? exportFile : null;
+}
+
 function workspaceEndpoints(app) {
   if (!app) return;
   const responseCache = new Map();
@@ -1189,7 +1203,13 @@ function workspaceEndpoints(app) {
         };
 
         const exportName = filename || `${workspace.slug}-${Date.now()}.json`;
-        const exportFile = path.join(exportsPath, exportName);
+        const exportFile = resolveExportFile(exportName);
+        if (!exportFile) {
+          response
+            .status(400)
+            .json({ success: false, error: "Invalid export filename" });
+          return;
+        }
         if (!fs.existsSync(exportsPath))
           fs.mkdirSync(exportsPath, { recursive: true });
         fs.writeFileSync(exportFile, JSON.stringify(snapshot, null, 2));
@@ -1213,7 +1233,11 @@ function workspaceEndpoints(app) {
     async (request, response) => {
       try {
         const { filename } = request.params;
-        const exportFile = path.join(exportsPath, filename);
+        const exportFile = resolveExportFile(filename);
+        if (!exportFile) {
+          response.sendStatus(400).end();
+          return;
+        }
         if (!fs.existsSync(exportFile)) {
           response.sendStatus(404).end();
           return;
